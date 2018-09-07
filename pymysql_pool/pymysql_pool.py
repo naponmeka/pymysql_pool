@@ -8,7 +8,7 @@ def create_pool(pymysql_args, max_count=10, timeout=10):
     return ConnectionPool(pymysql_args, max_count, timeout)
 
 class ConnectionPool(object):
-    def __init__(self, pymysql_args, max_count=10, timeout=10):
+    def __init__(self, pymysql_args, max_count=10, timeout=60):
         self.pymysql_args = pymysql_args
         self.max_count = max_count
         self.timeout = timeout
@@ -18,29 +18,33 @@ class ConnectionPool(object):
         self.free_list = set()
 
     def new_connection(self):
-        return pymysql.connect(**self.pymysql_args)
+        connection =  pymysql.connect(**self.pymysql_args)
+        connection.connection_pool = self
+        return connection
+
+    def get_from_free_list(self):
+        connection = self.free_list.pop()
+        if connection.open is False:
+            connection = self.new_connection()
+        return connection
 
     def get(self):
         with self.lock:
             if len(self.free_list) > 0:
-                conn = self.free_list.pop()
-                if conn.open is False:
-                    conn = self.new_connection()
-                self.in_use_list.add(conn)
-                return conn
-            if len(self.in_use_list) < self.max_count:
-                conn = self.new_connection()
-                conn.pooling = self
-                self.free_list.add(conn)
-            if len(self.free_list) <= 0:
+                connection = self.get_from_free_list()
+            elif len(self.in_use_list) < self.max_count:
+                connection = self.new_connection()
+            if len(self.free_list) == 0:
                 self.condition.wait(self.timeout)
-                if len(self.free_list) <= 0:
+                if len(self.free_list) == 0:
                     raise TimeoutError()
-            conn = self.free_list.pop()
-            self.in_use_list.add(conn)
-            return conn
+                else:
+                    connection = self.get_from_free_list()
+            self.in_use_list.add(connection)
+            return connection
 
-    def put(self, value):
+
+    def return_to_pool(self, value):
         with self.lock:
             self.in_use_list.remove(value)
             self.free_list.add(value)
@@ -57,15 +61,15 @@ def modified_enter(self):
     return self
 
 def modified_exit(self, type, value, traceback):
-    if self.pooling != None:
-        self.pooling.put(self)
+    if self.connection_pool != None:
+        self.connection_pool.return_to_pool(self)
     elif self.original_close != None:
         self.original_close()
 
 
 def modified_close(self):
-    if self.pooling != None:
-        self.pooling.put(self)
+    if self.connection_pool != None:
+        self.connection_pool.return_to_pool(self)
     elif self.old_close != None:
         self.old_close()
 
