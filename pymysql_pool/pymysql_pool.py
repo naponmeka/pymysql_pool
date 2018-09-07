@@ -34,7 +34,7 @@ class ConnectionPool(object):
                 connection = self.get_from_free_list()
             elif len(self.in_use_list) < self.max_count:
                 connection = self.new_connection()
-            if len(self.free_list) == 0:
+            elif len(self.free_list) == 0:
                 self.condition.wait(self.timeout)
                 if len(self.free_list) == 0:
                     raise TimeoutError()
