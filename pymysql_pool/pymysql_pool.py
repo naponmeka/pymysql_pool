@@ -17,32 +17,20 @@ class ConnectionPool(object):
         self.in_use_list = set()
         self.free_list = set()
 
-    def new_connection(self):
-        connection =  pymysql.connect(**self.pymysql_args)
-        connection.connection_pool = self
-        return connection
-
-    def get_from_free_list(self):
-        connection = self.free_list.pop()
-        if connection.open is False:
-            connection = self.new_connection()
-        return connection
-
     def get(self):
         with self.lock:
             if len(self.free_list) > 0:
-                connection = self.get_from_free_list()
+                connection = self.__get_from_free_list()
             elif len(self.in_use_list) < self.max_count:
-                connection = self.new_connection()
+                connection = self.__new_connection()
             elif len(self.free_list) == 0:
                 self.condition.wait(self.timeout)
                 if len(self.free_list) == 0:
                     raise TimeoutError()
                 else:
-                    connection = self.get_from_free_list()
+                    connection = self.__get_from_free_list()
             self.in_use_list.add(connection)
             return connection
-
 
     def return_to_pool(self, value):
         with self.lock:
@@ -57,17 +45,27 @@ class ConnectionPool(object):
     def max_size(self):
         return self.max_count
 
-def modified_enter(self):
+    def __new_connection(self):
+        connection =  pymysql.connect(**self.pymysql_args)
+        connection.connection_pool = self
+        return connection
+
+    def __get_from_free_list(self):
+        connection = self.free_list.pop()
+        connection.ping(reconnect=True)
+        return connection
+
+
+def __modified_enter(self):
     return self
 
-def modified_exit(self, type, value, traceback):
+def __modified_exit(self, type, value, traceback):
     if self.connection_pool != None:
         self.connection_pool.return_to_pool(self)
     elif self.original_close != None:
         self.original_close()
 
-
-def modified_close(self):
+def __modified_close(self):
     if self.connection_pool != None:
         self.connection_pool.return_to_pool(self)
     elif self.old_close != None:
@@ -75,23 +73,23 @@ def modified_close(self):
 
 def __modify_pymysql_connection_close():
     original_close = pymysql.connections.Connection.close
-    if original_close == modified_close:
+    if original_close == __modified_close:
         return
-    pymysql.connections.Connection.close = modified_close
+    pymysql.connections.Connection.close = __modified_close
     pymysql.connections.Connection.original_close = original_close
 
 def __modify_pymysql_connection_enter():
     original_enter = pymysql.connections.Connection.__enter__
-    if original_enter == modified_enter:
+    if original_enter == __modified_enter:
         return
-    pymysql.connections.Connection.__enter__ = modified_enter
+    pymysql.connections.Connection.__enter__ = __modified_enter
     pymysql.connections.Connection.original_enter = original_enter
 
 def __modify_pymysql_connection_exit():
     original_exit = pymysql.connections.Connection.__exit__
-    if original_exit == modified_exit:
+    if original_exit == __modified_exit:
         return
-    pymysql.connections.Connection.__exit__ = modified_exit
+    pymysql.connections.Connection.__exit__ = __modified_exit
     pymysql.connections.Connection.original_exit = original_exit
 
 __modify_pymysql_connection_close()
