@@ -5,9 +5,9 @@ import threading
 import pymysql
 
 def create_pool(pymysql_args, max_count=10, timeout=10):
-    return ConnPool(pymysql_args, max_count, timeout)
+    return ConnectionPool(pymysql_args, max_count, timeout)
 
-class ConnPool(object):
+class ConnectionPool(object):
     def __init__(self, pymysql_args, max_count=10, timeout=10):
         self.pymysql_args = pymysql_args
         self.max_count = max_count
@@ -17,26 +17,28 @@ class ConnPool(object):
         self.in_use_list = set()
         self.free_list = set()
 
-    def new_instance(self):
+    def new_connection(self):
         return pymysql.connect(**self.pymysql_args)
 
     def get(self):
         with self.lock:
             if len(self.free_list) > 0:
-                one = self.free_list.pop()
-                self.in_use_list.add(one)
-                return one
+                conn = self.free_list.pop()
+                if conn.open is False:
+                    conn = self.new_connection()
+                self.in_use_list.add(conn)
+                return conn
             if len(self.in_use_list) < self.max_count:
-                one = self.new_instance()
-                one.pooling = self
-                self.free_list.add(one)
+                conn = self.new_connection()
+                conn.pooling = self
+                self.free_list.add(conn)
             if len(self.free_list) <= 0:
                 self.condition.wait(self.timeout)
                 if len(self.free_list) <= 0:
                     raise TimeoutError()
-            one = self.free_list.pop()
-            self.in_use_list.add(one)
-            return one
+            conn = self.free_list.pop()
+            self.in_use_list.add(conn)
+            return conn
 
     def put(self, value):
         with self.lock:
@@ -61,11 +63,11 @@ def modified_exit(self, type, value, traceback):
         self.original_close()
 
 
-def modified_close(conn):
-    if conn.pooling != None:
-        conn.pooling.put(conn)
-    elif conn.old_close != None:
-        conn.old_close()
+def modified_close(self):
+    if self.pooling != None:
+        self.pooling.put(self)
+    elif self.old_close != None:
+        self.old_close()
 
 def __modify_pymysql_connection_close():
     original_close = pymysql.connections.Connection.close
