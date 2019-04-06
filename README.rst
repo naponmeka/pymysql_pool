@@ -28,7 +28,7 @@ pip install git+https://github.com/naponmeka/pymysql_pool.git
 
 Usage
 -----
-
+.. code-block:: python
     import pymysql_pool
 
     mysql_pool = pymysql_pool.create_pool({
@@ -49,6 +49,7 @@ Usage
 
 Mocking and testing
 -------------------
+.. code-block:: python
     from unittest.mock import MagicMock, patch, Mock
 
     # Creating mock connection pool
