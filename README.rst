@@ -24,11 +24,14 @@ PyMySQL connection pool.
 
 Installation
 ------------
-pip install git+https://github.com/naponmeka/pymysql_pool.git
+You can install it with pip::
+
+    $ pip install git+https://github.com/naponmeka/pymysql_pool.git
 
 Usage
 -----
-.. code-block:: python
+Using the library ::
+
     import pymysql_pool
 
     mysql_pool = pymysql_pool.create_pool({
@@ -49,7 +52,8 @@ Usage
 
 Mocking and testing
 -------------------
-.. code-block:: python
+Testing::
+
     from unittest.mock import MagicMock, patch, Mock
 
     # Creating mock connection pool
